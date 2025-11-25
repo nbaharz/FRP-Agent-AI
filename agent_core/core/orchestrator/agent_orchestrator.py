@@ -38,23 +38,34 @@ class AgentOrchestrator:
             return "I’m having trouble processing that right now."
 
     async def handle_interaction(self, user_id: str, user_input: str, context=None):
-        """Handles one user message and NPC response"""
         try:
-            session_context = self.get_or_create_session(user_id)
-            agent, memory = setup_agent(user_id=user_id, db=self.db)
-            response_text = await self.generate_response(agent, user_input)
-
             repo = ChatRepository(self.db)
-            repo.add_message(user_id, "elara", "user", user_input)
-            repo.add_message(user_id, "elara", "npc", response_text)
 
-            session_context["messages"].append((user_input, response_text))
-            return response_text
+            # 1) Save user message
+            repo.add_message(
+                user_id=user_id,
+                content=user_input,
+                role="user"
+            )
+
+            # 2) GM agent & response
+            agent, memory = setup_agent(user_id=user_id, db=self.db)
+            gm_response = await self.generate_response(agent, user_input)
+
+            # 3) Save GM response
+            repo.add_message(
+                user_id=user_id,
+                content=gm_response,
+                role="gm"
+            )
+
+            return gm_response
 
         except Exception as e:
             print(f"[Agent Error] {e}")
             traceback.print_exc()
             return "Something went wrong during the interaction."
+
 
     async def end_session(self, user_id: str):
         """
@@ -72,15 +83,16 @@ class AgentOrchestrator:
                 return "No messages to summarize."
 
             conversation_text = "\n".join(
-                [f"USER: {u}\nNPC: {n}" for u, n in messages]
+                [f"USER: {u}\nGM: {n}" for u, n in messages]
             )
 
             agent, _ = setup_agent(user_id=user_id, db=self.db)
             summary_prompt = (
-                "Summarize the following conversation between USER and NPC in 3-4 sentences. "
-                "Focus on the main events, user actions, and key decisions.\n\n"
-                f"{conversation_text}\n\n"
-                "Produce a concise summary of what happened in this session."
+            "Summarize the following conversation between USER and GM "
+            "in 3–4 sentences. Focus on main events, player actions, and "
+            "important narrative developments.\n\n"
+            f"{conversation_text}\n\n"
+            "Produce a concise summary of what happened during this session."
             )
 
             summary_resp = await agent.ainvoke({"input": summary_prompt})
@@ -96,9 +108,10 @@ class AgentOrchestrator:
             add_long_term_memory(
                 db=self.db,
                 user_id=user_id,
-                npc_id="elara",
+                npc_id=None,
                 text=summary_text,
                 tags={"type": "session_summary"},
+                source_role="gm",
             )
 
             print(f"[Memory] Session summary stored for user {user_id}")

@@ -8,7 +8,7 @@ from agent_core.core.tools.lore_search import lore_search_tool
 from agent_core.core.tools.world_state_tool import get_world_state_tool, set_world_state_tool, reputation_change_tool
 from agent_core.core.tools.inventory_tool import inventory_add_tool, inventory_remove_tool
 from agent_core.core.tools.quest_tool import get_quest_tool
-from agent_core.core.prompts.npcPromptTemplate import elara_prompt 
+from agent_core.core.prompts.gmPromptTemplate import gm_prompt 
 from langchain.schema import SystemMessage
 from sqlalchemy.orm import Session
 from agent_core.core.memory.long_term import search_long_term_memory
@@ -37,14 +37,17 @@ def setup_agent(user_id: str = None, db: Session = None):
             relevant_memories = search_long_term_memory(
                 db=db,
                 user_id=user_id,
-                npc_id="elara",
+                npc_id= None,
                 query="current context",
                 k=5,
                 score_threshold=0.75
             )
             if relevant_memories:
                 memory_summaries = "\n".join([m["text"] for m in relevant_memories])
-                memory.buffer = f"Past memories:\n{memory_summaries}\n---\n" + getattr(memory, "buffer", "")
+                memory.buffer = (
+                    f"Relevant past memories:\n{memory_summaries}\n---\n" +
+                    getattr(memory, "buffer", "")
+                )
         except Exception as e:
             print(f"[LongTermMemory Recall Error] {e}")
 
@@ -66,11 +69,7 @@ def setup_agent(user_id: str = None, db: Session = None):
         memory=memory,
         verbose=False,
         agent_kwargs={
-        "system_message": SystemMessage(
-            content=elara_prompt.format(chat_history="{chat_history}",
-            input="{input}",
-            current_quest_status="{current_quest_status}")
-        )
+        "system_message": SystemMessage(content=gm_prompt)
         }
     )
 

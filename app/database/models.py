@@ -44,13 +44,18 @@ class LongTermMemory(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
-    npc_id  = Column(String, index=True, nullable=False)
-    text    = Column(Text, nullable=False)
-    tags    = json_column()
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    npc_id  = Column(String, index=True, nullable=True) #ileride eklenebilir.
+
+    source_role = Column(
+        Enum("gm", "npc", name="memory_role"),
+        nullable=False,
+        server_default="gm"
+    )
+
+    text = Column(Text, nullable=False)
+    tags = json_column()
     user = relationship("User", back_populates="memories")
-
 
 # WORLD STATE (global)
 class WorldState(Base):
@@ -59,6 +64,7 @@ class WorldState(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     key = Column(String, unique=True, index=True)
     value = json_column()
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
@@ -72,6 +78,7 @@ class Inventory(Base):
     item_name = Column(String, index=True)
     qty = Column(Integer, default=1)
     meta = json_column()
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user = relationship("User", back_populates="inventory")
@@ -85,6 +92,7 @@ class Reputation(Base):
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
     faction_id = Column(String, index=True)
     score = Column(Float, default=0.0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user = relationship("User", back_populates="reputation")
@@ -106,7 +114,8 @@ class Quest(Base):
     summary = Column(String, nullable=True)
     status = Column(Enum(QuestStatus), default=QuestStatus.locked, nullable=False)
     meta_json = Column(JSON, default=dict)
-
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
     user = relationship("User", back_populates="quests")
 
 #CHAT MESSAGES
@@ -115,8 +124,11 @@ class ChatMessage(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
-    npc_id = Column(String, index=True, nullable=False)
-    role = Column(String, nullable=False)  # "user" or "npc"
+    npc_id = Column(String, index=True, nullable=True) #ileride npc eklenebilir.
+    
+    # "user" or "gm"
+    role = Column(String, nullable=False)
+
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
