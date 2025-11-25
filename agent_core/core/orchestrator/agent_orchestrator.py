@@ -7,9 +7,15 @@ from app.repositories.chat_repository import ChatRepository
 
 
 class AgentOrchestrator:
+    """
+    Handles user-NPC conversation sessions, in-memory session tracking, and
+    long-term memory summarization.
+    """
+
     def __init__(self, db: Session):
         self.db = db
-        self.active_sessions = {}  # {user_id: {"messages": [], "session_start": datetime}}
+        # 🔹 user_id -> {"messages": [(user, npc), ...], "session_start": datetime}
+        self.active_sessions = {}
 
     def get_or_create_session(self, user_id: str):
         """Create or get the user's current active session"""
@@ -21,7 +27,7 @@ class AgentOrchestrator:
         return self.active_sessions[user_id]
 
     async def generate_response(self, agent, user_input: str):
-        """Generate the LLM response"""
+        """Generate LLM response asynchronously"""
         try:
             response = await agent.ainvoke({"input": user_input})
             if isinstance(response, dict):
@@ -32,7 +38,7 @@ class AgentOrchestrator:
             return "I’m having trouble processing that right now."
 
     async def handle_interaction(self, user_id: str, user_input: str, context=None):
-        """Handle user-NPC interaction (one message exchange)"""
+        """Handles one user message and NPC response"""
         try:
             session_context = self.get_or_create_session(user_id)
             agent, memory = setup_agent(user_id=user_id, db=self.db)
@@ -42,9 +48,7 @@ class AgentOrchestrator:
             repo.add_message(user_id, "elara", "user", user_input)
             repo.add_message(user_id, "elara", "npc", response_text)
 
-            # Save message pair in in-memory session buffer
             session_context["messages"].append((user_input, response_text))
-
             return response_text
 
         except Exception as e:
@@ -54,8 +58,8 @@ class AgentOrchestrator:
 
     async def end_session(self, user_id: str):
         """
-        Summarize the session and store it in long-term memory.
-        Called when the user finishes talking or leaves.
+        Summarize the active chat session and store the conversation + summary
+        in the LongTermMemory table.
         """
         try:
             if user_id not in self.active_sessions:
@@ -67,7 +71,6 @@ class AgentOrchestrator:
             if not messages:
                 return "No messages to summarize."
 
-            # Build conversation text for summarization
             conversation_text = "\n".join(
                 [f"USER: {u}\nNPC: {n}" for u, n in messages]
             )
@@ -81,23 +84,21 @@ class AgentOrchestrator:
             )
 
             summary_resp = await agent.ainvoke({"input": summary_prompt})
-            if isinstance(summary_resp, dict):
-                summary_text = summary_resp.get("output", "").strip()
-            else:
-                summary_text = str(summary_resp).strip()
-
-            # Fallback in case of empty summary
+            summary_text = (
+                summary_resp.get("output", "").strip()
+                if isinstance(summary_resp, dict)
+                else str(summary_resp).strip()
+            )
             if not summary_text:
                 summary_text = "[Session Summary Unavailable]"
 
-            # Store full session and its summary in long-term memory
+            # Store conversation summary in long-term memory
             add_long_term_memory(
                 db=self.db,
                 user_id=user_id,
                 npc_id="elara",
-                text=conversation_text,  # raw session transcript
+                text=summary_text,
                 tags={"type": "session_summary"},
-                index_text=summary_text   # summarized embedding text
             )
 
             print(f"[Memory] Session summary stored for user {user_id}")
